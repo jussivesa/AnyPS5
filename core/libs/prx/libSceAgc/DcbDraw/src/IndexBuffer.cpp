@@ -9,25 +9,20 @@
 extern "C" {
 
 std::uint32_t* APS5_VABI sceAgcDcbSetIndexBuffer(CommandBuffer* buf, std::uint64_t indexAddress) {
-    Agc::Command::CheckAddress(indexAddress, 2, __func__);
+    if (indexAddress != 0) Agc::Command::CheckAddress(indexAddress, 2, __func__);
     return Agc::Command::Emit(buf, 0x26u, {static_cast<std::uint32_t>(indexAddress), static_cast<std::uint32_t>(indexAddress >> 32u)}, __func__);
 }
 
 std::uint32_t APS5_VABI sceAgcDcbSetIndexBufferGetSize() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
+    return 12;
 }
 
-uint32_t* APS5_VABI sceAgcDcbSetIndexCount(CommandBuffer* buf, uint32_t index_count) {
- (void)buf;
- (void)index_count;
- NotImplemented_nid_no_patch(__func__);
- return nullptr;
+std::uint32_t* APS5_VABI sceAgcDcbSetIndexCount(CommandBuffer* buf, std::uint32_t indexCount) {
+    return Agc::Command::Emit(buf, 0x13u, {indexCount}, __func__);
 }
 
 std::uint32_t APS5_VABI sceAgcDcbSetIndexCountGetSize() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
+    return 8;
 }
 
 std::uint32_t* APS5_VABI sceAgcDcbSetIndexSize(CommandBuffer* buf, std::uint8_t indexSize, std::uint8_t cachePolicy) {
@@ -37,8 +32,14 @@ std::uint32_t* APS5_VABI sceAgcDcbSetIndexSize(CommandBuffer* buf, std::uint8_t 
 }
 
 std::uint32_t APS5_VABI sceAgcDcbSetIndexSizeGetSize() {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
+    return 12;
+}
+
+std::uint32_t* APS5_VABI sceAgcDcbSetIndexSize_0600(CommandBuffer* buf, std::uint8_t indexSize, std::uint8_t cachePolicy, std::uint8_t perInstanceObjectId) {
+    Agc::Command::CheckBits(perInstanceObjectId, 1, __func__);
+    auto* packet = sceAgcDcbSetIndexSize(buf, indexSize, cachePolicy);
+    packet[2] |= static_cast<std::uint32_t>(perInstanceObjectId) << 14u;
+    return packet;
 }
 
 std::uint32_t* APS5_VABI sceAgcDcbSetIndexIndirectArgs(CommandBuffer* buf, std::uint32_t dataOffsetInBytes) {

@@ -8,9 +8,14 @@
 #include <span>
 #include <vector>
 
+#include <string>
+
 namespace ShaderRecompiler::Detail {
 
-bool EvaluateRuntimeSourcesImpl(const IrResourcePlan& program, std::span<const std::uint32_t> sources, const SrtRuntime& runtime, std::vector<DescriptorValue>& results, std::vector<std::uint32_t>& flat, bool evaluateFlat, std::span<const std::uint8_t> cleanFlatSlots, std::vector<std::uint8_t>& activeSources);
+// Why the last EvaluateRuntimeSourcesImpl call on this thread returned false.
+const std::string& RuntimeSourceFailureReason();
+
+bool EvaluateRuntimeSourcesImpl(const IrResourcePlan& program, std::span<const std::uint32_t> sources, const SrtRuntime& runtime, std::vector<DescriptorValue>& results, std::vector<std::uint32_t>& flat, bool evaluateFlat, std::span<const std::uint8_t> cleanFlatSlots, std::vector<std::uint8_t>& activeSources, std::vector<SrtReadPoison>* poison = nullptr, std::uint32_t* nullRootReads = nullptr);
 
 }
 

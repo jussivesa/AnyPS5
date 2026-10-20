@@ -86,6 +86,7 @@ public:
     void SetImmediateU16(std::uint16_t value);
     void SetRegister(const GuestRegister& reg);
     void AddPhiOperand(IrBlock* predecessor, IrValue* value);
+    void SetDetachedOperands(std::vector<IrValue*> arguments, std::vector<IrBlock*> phiBlocks);
     void ReplaceOpcode(IrOpcode opcode);
     void Invalidate();
     void ReplaceUsesWith(IrValue* replacement, bool preserve);
@@ -105,6 +106,44 @@ private:
     std::vector<IrValue*> uses;
     IrBlock* parent;
 };
+
+inline IrOpcode IrValue::Opcode() const {
+    return opcode;
+}
+
+inline IrType IrValue::Type() const {
+    return type;
+}
+
+inline bool IrValue::HasImmediate() const {
+    return hasImmediate;
+}
+
+inline bool IrValue::IsIdentity() const {
+    return opcode == IrOpcode::Identity;
+}
+
+inline std::size_t IrValue::ArgumentCount() const {
+    return arguments.size();
+}
+
+inline IrValue* IrValue::Argument(std::size_t index) const {
+    if (index >= arguments.size()) {
+        throw std::out_of_range("IrValue::Argument index is out of range");
+    }
+    return arguments[index];
+}
+
+inline IrValue* IrValue::Resolve() const {
+    const IrValue* current = this;
+    while (current->IsIdentity()) {
+        if (current->arguments.empty() || current->arguments.front() == nullptr) {
+            throw std::runtime_error("IrValue::Resolve encountered a malformed Identity value");
+        }
+        current = current->arguments.front();
+    }
+    return const_cast<IrValue*>(current);
+}
 
 template<IrType TValueType>
 class IrTypedValue {

@@ -6,14 +6,7 @@
 namespace ShaderRecompiler {
 
 IrValue::IrValue(IrOpcode opcode, IrType type, std::uint32_t id) : opcode(opcode), type(type), id(id), hasImmediate(false), parent(nullptr) {
-}
-
-IrOpcode IrValue::Opcode() const {
-    return opcode;
-}
-
-IrType IrValue::Type() const {
-    return type;
+    arguments.reserve(IrOpcodeOperandCount(opcode));
 }
 
 std::uint32_t IrValue::Id() const {
@@ -30,10 +23,6 @@ const std::vector<IrValue*>& IrValue::Uses() const {
 
 IrBlock* IrValue::Parent() const {
     return parent;
-}
-
-bool IrValue::HasImmediate() const {
-    return hasImmediate;
 }
 
 std::uint32_t IrValue::ImmediateU32() const {
@@ -77,10 +66,30 @@ void IrValue::ReplaceAllUsesWith(IrValue* replacement) {
     if (replacement == this) {
         return;
     }
-    while (!operandUses.empty()) {
-        const IrUse use = operandUses.back();
-        use.user->ReplaceArgument(use.operand, replacement);
+    if (replacement != nullptr) {
+        const auto reserveAdditional = [count = operandUses.size()](auto& list) {
+            const auto maximum = list.max_size();
+            if (count > maximum - list.size()) {
+                throw std::length_error("IrValue::ReplaceAllUsesWith use list is too large");
+            }
+            const auto required = list.size() + count;
+            if (required > list.capacity()) {
+                const auto grown = list.capacity() > maximum / 2 ? maximum : list.capacity() * 2;
+                list.reserve(std::max(required, grown));
+            }
+        };
+        reserveAdditional(replacement->uses);
+        reserveAdditional(replacement->operandUses);
     }
+    for (auto use = operandUses.rbegin(); use != operandUses.rend(); ++use) {
+        use->user->arguments[use->operand] = replacement;
+        if (replacement != nullptr) {
+            replacement->uses.push_back(use->user);
+            replacement->operandUses.push_back(*use);
+        }
+    }
+    uses.clear();
+    operandUses.clear();
 }
 
 void IrValue::SetImmediateU32(std::uint32_t value) {
@@ -96,23 +105,8 @@ bool IrValue::IsEmpty() const {
     return opcode == IrOpcode::Void;
 }
 
-bool IrValue::IsIdentity() const {
-    return opcode == IrOpcode::Identity;
-}
-
 bool IrValue::IsPhi() const {
     return opcode == IrOpcode::Phi;
-}
-
-IrValue* IrValue::Resolve() const {
-    const IrValue* current = this;
-    while (current->IsIdentity()) {
-        if (current->arguments.empty() || current->arguments.front() == nullptr) {
-            throw std::runtime_error("IrValue::Resolve encountered a malformed Identity value");
-        }
-        current = current->arguments.front();
-    }
-    return const_cast<IrValue*>(current);
 }
 
 bool IrValue::MayHaveSideEffects() const {
@@ -127,19 +121,8 @@ std::size_t IrValue::UseCount() const {
     return uses.size();
 }
 
-std::size_t IrValue::ArgumentCount() const {
-    return arguments.size();
-}
-
 std::size_t IrValue::PhiBlockCount() const {
     return phiBlocks.size();
-}
-
-IrValue* IrValue::Argument(std::size_t index) const {
-    if (index >= arguments.size()) {
-        throw std::out_of_range("IrValue::Argument index is out of range");
-    }
-    return arguments[index];
 }
 
 IrBlock* IrValue::PhiBlock(std::size_t index) const {
@@ -226,6 +209,17 @@ void IrValue::AddPhiOperand(IrBlock* predecessor, IrValue* value) {
     AddArgument(value);
 }
 
+void IrValue::SetDetachedOperands(std::vector<IrValue*> arguments, std::vector<IrBlock*> phiBlocks) {
+    if (!this->arguments.empty() || !this->phiBlocks.empty()) {
+        throw std::runtime_error("IrValue::SetDetachedOperands called on a value with operands");
+    }
+    if (IsPhi() ? phiBlocks.size() != arguments.size() : !phiBlocks.empty()) {
+        throw std::runtime_error("IrValue::SetDetachedOperands phi blocks do not match the arguments");
+    }
+    this->arguments = std::move(arguments);
+    this->phiBlocks = std::move(phiBlocks);
+}
+
 void IrValue::ReplaceOpcode(IrOpcode opcode) {
     this->opcode = opcode;
 }
@@ -261,7 +255,7 @@ bool IrValue::operator==(const IrValue& other) const {
     if (this == &other) {
         return true;
     }
-    if (opcode != other.opcode || type != other.type || hasImmediate != other.hasImmediate) {
+    if (opcode != other.opcode || type != other.type || flags != other.flags || hasImmediate != other.hasImmediate) {
         return false;
     }
     if (hasImmediate && immediateBits != other.immediateBits) {

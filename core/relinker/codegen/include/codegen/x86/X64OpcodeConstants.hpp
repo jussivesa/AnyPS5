@@ -106,6 +106,12 @@ inline constexpr std::uint8_t OneByteLoop = 0xE0;
 inline constexpr std::uint8_t OneByteLoopMax = 0xE2;
 inline constexpr std::uint8_t OneByteInOutImm8Min = 0xE4;
 inline constexpr std::uint8_t OneByteInOutImm8Max = 0xE7;
+inline constexpr std::uint8_t OneByteInt = 0xCD;
+inline constexpr std::uint8_t OneByteRetImm16 = 0xC2;
+inline constexpr std::uint8_t OneByteRetFarImm16 = 0xCA;
+inline constexpr std::uint8_t OneByteEnter = 0xC8;
+inline constexpr std::uint8_t OneByteMovMoffsMin = 0xA0;
+inline constexpr std::uint8_t OneByteMovMoffsMax = 0xA3;
 
 inline constexpr std::uint8_t TwoByteJccRel32Min = 0x80;
 inline constexpr std::uint8_t TwoByteJccRel32Max = 0x8F;
@@ -113,7 +119,7 @@ inline constexpr std::uint8_t TwoByteMovImm8ModRm = 0xBA;
 inline constexpr std::uint8_t TwoByteCmovRangeMin = 0x40;
 inline constexpr std::uint8_t TwoByteCmovRangeMax = 0x4F;
 inline constexpr std::uint8_t TwoByteModRmRangeAMin = 0xA3;
-inline constexpr std::uint8_t TwoByteModRmRangeAMax = 0xAB;
+inline constexpr std::uint8_t TwoByteModRmRangeAMax = 0xA7;
 inline constexpr std::uint8_t TwoByteModRmRangeBMin = 0xB0;
 inline constexpr std::uint8_t TwoByteModRmRangeBMax = 0xB7;
 inline constexpr std::uint8_t TwoByteModRmRangeCMin = 0xBC;
@@ -126,6 +132,7 @@ inline constexpr std::uint8_t TwoByteModRmRangeFMin = 0x38;
 inline constexpr std::uint8_t TwoByteModRmRangeFMax = 0x3A;
 inline constexpr std::uint8_t TwoByteModRmRangeGMin = 0x54;
 inline constexpr std::uint8_t TwoByteModRmRangeGMax = 0x7F;
+inline constexpr std::uint8_t TwoByteEmms = 0x77;
 inline constexpr std::uint8_t TwoByteModRmRangeHMin = 0xD0;
 inline constexpr std::uint8_t TwoByteModRmRangeHMax = 0xFE;
 inline constexpr std::uint8_t TwoByteNopModRm = 0x1F;
@@ -158,6 +165,21 @@ inline constexpr std::uint8_t TwoByteShufpdImm8 = 0xC6;
 inline constexpr std::uint8_t TwoByteGrp9 = 0xC7;
 inline constexpr std::uint8_t TwoByteExtrqInsertqImm8Imm8 = 0x78;
 inline constexpr std::uint8_t TwoByteExtrqInsertqModRm = 0x79;
+inline constexpr std::uint8_t TwoByteMovnts = 0x2B;
+inline constexpr std::uint8_t TwoByteGrp6 = 0x00;
+inline constexpr std::uint8_t TwoByteLar = 0x02;
+inline constexpr std::uint8_t TwoByteLsl = 0x03;
+inline constexpr std::uint8_t TwoBytePrefetchw = 0x0D;
+inline constexpr std::uint8_t TwoByte3DNow = 0x0F;
+inline constexpr std::uint8_t TwoByteMovCrDrMin = 0x20;
+inline constexpr std::uint8_t TwoByteMovCrDrMax = 0x23;
+inline constexpr std::uint8_t TwoBytePopcnt = 0xB8;
+inline constexpr std::uint8_t TwoByteUd1 = 0xB9;
+inline constexpr std::uint8_t TwoByteBts = 0xAB;
+inline constexpr std::uint8_t TwoByteBtc = 0xBB;
+inline constexpr std::uint8_t TwoByteXaddRm8 = 0xC0;
+inline constexpr std::uint8_t TwoByteMovnti = 0xC3;
+inline constexpr std::uint8_t TwoBytePinsrw = 0xC4;
 
 inline constexpr std::uint8_t VexNoModRmMin = 0x77;
 inline constexpr std::uint8_t VexNoModRmMax = 0x77;
@@ -171,6 +193,7 @@ inline constexpr std::uint8_t EvexMap0F38 = 0x02;
 inline constexpr std::size_t ImmSizeNone = 0;
 inline constexpr std::size_t ImmSize8 = 1;
 inline constexpr std::size_t ImmSize16 = 2;
+inline constexpr std::size_t ImmSizeEnter = 3;
 inline constexpr std::size_t ImmSize32 = 4;
 inline constexpr std::size_t ImmSize64 = 8;
 
@@ -193,12 +216,15 @@ inline constexpr std::uint8_t SibBaseDisp32 = 0x05;
 inline constexpr std::size_t Disp8Size = 1;
 inline constexpr std::size_t Disp32Size = 4;
 
-inline constexpr std::size_t Rel32InstructionLength = 5;
 
 inline constexpr std::size_t Vex2PrefixLength = 2;
 inline constexpr std::size_t Vex3PrefixLength = 3;
 inline constexpr std::uint8_t Vex3MapMask = 0x1F;
 inline constexpr std::uint8_t Vex3Map0F3A = 0x03;
+inline constexpr std::uint8_t XopPrefix = 0x8F;
+inline constexpr std::uint8_t XopMapMin = 0x08;
+inline constexpr std::uint8_t XopMap8 = 0x08;
+inline constexpr std::uint8_t XopMapA = 0x0A;
 
 }
 

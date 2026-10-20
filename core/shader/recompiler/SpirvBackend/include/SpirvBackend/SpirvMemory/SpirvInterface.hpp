@@ -8,8 +8,8 @@
 
 namespace ShaderRecompiler {
 
-void EmitModuleHeader(SpirvModule& module, const IrProgram& program, const BindingAllocationResult& bindings);
-void EmitModuleHeader(SpirvEmitterState& state, const BindingAllocationResult& bindings);
+void EmitModuleHeader(SpirvModule& module, const IrProgram& program, const CompiledBindingLayout& bindings);
+void EmitModuleHeader(SpirvEmitterState& state, const CompiledBindingLayout& bindings);
 void DefineModule(SpirvEmitterState& state);
 std::uint32_t DefineInterfaceVariable(SpirvEmitterState& state, std::uint32_t type, std::uint32_t storage, const char* name);
 std::uint32_t ExecutionModelForStage(IrShaderStage stage);
@@ -21,6 +21,8 @@ const SpirvInputBinding* SpirvInputBindingForParameter(const SpirvEmitterState& 
 std::uint32_t PixelParameterLocation(const SpirvEmitterState& state, std::uint32_t attr);
 bool PixelParameterIsFlat(const SpirvEmitterState& state, std::uint32_t attr);
 bool PixelParameterIsCustom(const SpirvEmitterState& state, std::uint32_t attr);
+bool PixelParameterIsDefault(const SpirvEmitterState& state, std::uint32_t attr);
+bool PixelParameterIsLinear(const SpirvEmitterState& state, std::uint32_t attr);
 
 VertexInputScalarKind VertexParameterScalarKind(const SpirvEmitterState& state, std::uint32_t location);
 std::uint32_t VertexParameterComponentCount(const SpirvInputBinding& input);

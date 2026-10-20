@@ -1,6 +1,9 @@
 #include "prx/libSceAgc/Command/include/Packet.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -15,11 +18,17 @@ void Require(bool condition, const char* function, const char* reason) {
 }
 
 void CheckBits(std::uint64_t value, std::uint64_t mask, const char* function) {
-    Require((value & ~mask) == 0, function, "reserved bits are set");
+    if ((value & ~mask) == 0) return;
+    char reason[96];
+    std::snprintf(reason, sizeof(reason), "reserved bits are set (value 0x%llx, allowed 0x%llx)", static_cast<unsigned long long>(value), static_cast<unsigned long long>(mask));
+    Require(false, function, reason);
 }
 
 void CheckAddress(std::uint64_t address, std::uint32_t alignment, const char* function) {
-    Require(address != 0 && (address & (alignment - 1u)) == 0, function, "null or misaligned address");
+    if (address != 0 && (address & (alignment - 1u)) == 0) return;
+    char message[64];
+    std::snprintf(message, sizeof(message), "null or misaligned address 0x%llx", static_cast<unsigned long long>(address));
+    Require(false, function, message);
 }
 
 std::uint32_t Header(std::uint32_t opcode, std::uint32_t count, std::uint32_t flags) {
@@ -33,12 +42,12 @@ std::uint32_t available(const CommandBuffer& buffer, const char* function) {
     const auto bottom = reinterpret_cast<std::uintptr_t>(buffer.bottom);
     const auto top = reinterpret_cast<std::uintptr_t>(buffer.top);
     const auto up = reinterpret_cast<std::uintptr_t>(buffer.cursor_up);
-    const auto down = reinterpret_cast<std::uintptr_t>(buffer.cursor_down);
+    const auto down = buffer.cursor_down != nullptr ? reinterpret_cast<std::uintptr_t>(buffer.cursor_down) : top;
     Require(((bottom | top | up | down) & 3u) == 0, function, "misaligned command buffer");
     Require(bottom <= up && up <= down && down <= top, function, "invalid command buffer cursors");
     Require(bottom != 0 || top == 0, function, "null command buffer storage");
     const auto count = (down - up) / sizeof(std::uint32_t);
-    Require(count >= buffer.reserved_dw, function, "reserved space exceeds command buffer capacity");
+    if (count <= buffer.reserved_dw) return 0;
     Require(count - buffer.reserved_dw <= std::numeric_limits<std::uint32_t>::max(), function, "command buffer capacity overflow");
     return static_cast<std::uint32_t>(count - buffer.reserved_dw);
 }
@@ -78,7 +87,7 @@ void ValidatePacket(const std::uint32_t* packet, std::uint32_t opcode, std::uint
 }
 
 std::uint32_t* WriteNop(CommandBuffer* buffer, std::uint32_t count, const char* function) {
-    const auto header = Header(0x10u, count);
+    const auto header = count == 1 ? 0xffff1000u : Header(0x10u, count);
     auto* packet = Allocate(buffer, count, function);
     packet[0] = header;
     std::fill_n(packet + 1, count - 1u, 0u);
@@ -89,8 +98,8 @@ std::uint32_t* WriteRegisterRange(CommandBuffer* buffer, std::uint32_t opcode, s
     Require(count != 0 && count <= 0x3fffu && offset <= 0xffffu && count <= 0x10000u - offset, function, "invalid register range");
     std::vector<std::uint32_t> snapshot;
     if (values != nullptr) {
-        CheckAddress(reinterpret_cast<std::uintptr_t>(values), 4, function);
-        snapshot.assign(values, values + count);
+        snapshot.resize(count);
+        std::memcpy(snapshot.data(), values, static_cast<std::size_t>(count) * sizeof(std::uint32_t));
     }
     auto* packet = Allocate(buffer, count + 2u, function);
     packet[0] = Header(opcode, count + 2u);
@@ -100,7 +109,10 @@ std::uint32_t* WriteRegisterRange(CommandBuffer* buffer, std::uint32_t opcode, s
 }
 
 std::uint32_t* WriteRegisters(CommandBuffer* buffer, std::uint32_t opcode, const volatile ShaderRegister* registers, std::uint32_t count, bool snapshotAll, const char* function) {
-    Require(count != 0, function, "empty register list");
+    if (count == 0) {
+        Require(buffer != nullptr, function, "null command buffer");
+        return buffer->cursor_up;
+    }
     CheckAddress(reinterpret_cast<std::uintptr_t>(registers), 4, function);
     std::vector<ShaderRegister> snapshot;
     if (snapshotAll) {
@@ -132,7 +144,7 @@ std::uint32_t* WriteRegisters(CommandBuffer* buffer, std::uint32_t opcode, const
 
 std::uint32_t* WriteIndirectRegisters(CommandBuffer* buffer, std::uint32_t opcode, const volatile ShaderRegister* registers, std::uint32_t count, const char* function) {
     const auto address = reinterpret_cast<std::uintptr_t>(registers);
-    CheckAddress(address, 4, function);
+    if (address != 0 || count != 0) CheckAddress(address, 4, function);
     CheckBits(count, 0x3fffu, function);
     return Emit(buffer, opcode, {static_cast<std::uint32_t>(address), static_cast<std::uint32_t>(address >> 32u), 0x80000000u, count}, function);
 }
@@ -150,6 +162,13 @@ void PatchIndirectCount(std::uint32_t* packet, std::uint32_t opcode, std::uint32
     ValidatePacket(packet, opcode, 5, function);
     Require(packet[3] == 0x80000000u && packet[4] <= 0x3fffu && count <= 0x3fffu - packet[4], function, "indirect register count overflow or invalid packet");
     packet[4] += count;
+}
+
+void SetIndirectCount(std::uint32_t* packet, std::uint32_t opcode, std::uint32_t count, const char* function) {
+    ValidatePacket(packet, opcode, 5, function);
+    Require(packet[3] == 0x80000000u && packet[4] <= 0x3fffu, function, "invalid indirect register packet");
+    CheckBits(count, 0x3fffu, function);
+    packet[4] = count;
 }
 
 }

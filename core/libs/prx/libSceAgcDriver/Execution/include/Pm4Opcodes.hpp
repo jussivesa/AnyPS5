@@ -41,6 +41,7 @@ inline constexpr Opcode Opcodes[] = {
     {0x41, "CP_DMA"},
     {0x42, "PFP_SYNC_ME"},
     {0x43, "SURFACE_SYNC"},
+    {0x45, "COND_WRITE"},
     {0x46, "EVENT_WRITE"},
     {0x47, "EVENT_WRITE_EOP"},
     {0x48, "EVENT_WRITE_EOS"},
@@ -64,6 +65,7 @@ inline constexpr Opcode Opcodes[] = {
     {0x88, "WAIT_ON_DE_COUNTER_DIFF"},
     {0x8D, "DISPATCH_DRAW"},
     {0x8E, "GET_LOD_STATS"},
+    {0x91, "INDEX_ATTRIBUTES_INDIRECT"},
     {0x93, "WAIT_REG_MEM_64"},
     {0x9F, "SET_CONTEXT_REG_INDIRECT"},
 };

@@ -44,7 +44,7 @@ inline std::string StripNidPostfix(const std::string& name) {
     std::string result = name;
     if (result.size() >= kNidPostfixLen &&
         result.compare(result.size() - kNidPostfixLen, kNidPostfixLen, kNidPostfix) == 0) {
-        result = result.substr(0u, result.size() - kNidPostfixLen);
+        result.resize(result.size() - kNidPostfixLen);
     }
     const auto disambigPos = result.rfind(kNidDisambigMarker);
     if (disambigPos != std::string::npos) {
@@ -54,14 +54,14 @@ inline std::string StripNidPostfix(const std::string& name) {
             [](unsigned char c) { return std::isdigit(c) != 0; }
         );
         if (allDigits && suffixStart < result.size())
-            result = result.substr(0u, disambigPos);
+            result.resize(disambigPos);
     }
     return result;
 }
 
 template<typename T>
 T Read(const std::vector<std::uint8_t>& buf, std::size_t offset) {
-    if (offset + sizeof(T) > buf.size()) throw std::runtime_error("read out of bounds");
+    if (offset > buf.size() || sizeof(T) > buf.size() - offset) throw std::runtime_error("read out of bounds");
     T v;
     std::memcpy(&v, buf.data() + offset, sizeof(T));
     return v;
@@ -69,7 +69,7 @@ T Read(const std::vector<std::uint8_t>& buf, std::size_t offset) {
 
 template<typename T>
 void Write(std::vector<std::uint8_t>& buf, std::size_t offset, const T& v) {
-    if (offset + sizeof(T) > buf.size()) throw std::runtime_error("write out of bounds");
+    if (offset > buf.size() || sizeof(T) > buf.size() - offset) throw std::runtime_error("write out of bounds");
     std::memcpy(buf.data() + offset, &v, sizeof(T));
 }
 
@@ -78,6 +78,7 @@ inline std::string ReadCStr(const std::vector<std::uint8_t>& buf, std::size_t of
     std::string s;
     while (offset < buf.size() && buf[offset] != 0u)
         s.push_back(static_cast<char>(buf[offset++]));
+    if (offset == buf.size()) throw std::runtime_error("unterminated cstr");
     return s;
 }
 

@@ -1,6 +1,7 @@
 #ifndef ELFPATCHER_IELFPATCHER_HPP
 #define ELFPATCHER_IELFPATCHER_HPP
 
+#include <codegen/CodegenTypes.hpp>
 #include <domain/Types.hpp>
 #include <cstdint>
 #include <string>
@@ -13,13 +14,14 @@ public:
     virtual ~IElfPatcher() = default;
 
     virtual std::vector<std::uint8_t> Patch(
-        const std::vector<std::uint8_t>& sourceElf,
+        std::vector<std::uint8_t> sourceElf,
         const std::vector<Domain::ProgramHeader>& originalHeaders,
         const Domain::SysVDynamicSection& dynamicSection,
         std::uint64_t originalPltGotVaddr,
         const std::string& runPath,
         bool lazyBinding,
-        bool dependencyDiagnostics
+        bool dependencyDiagnostics,
+        const std::vector<Codegen::TrampolineSite>& trampolines
     ) = 0;
 };
 

@@ -18,6 +18,11 @@ std::size_t DecodedInstruction::_skipPrefixesAndRex(
     while (pos < Length) {
         const std::uint8_t b = Data[pos];
 
+        if (b >= RexMin && b <= RexMax) {
+            pos += 1;
+            continue;
+        }
+
         if (b == PrefixRepne) {
             *outHasRepnePrefix = true;
             pos += 1;
@@ -51,11 +56,14 @@ std::size_t DecodedInstruction::_skipPrefixesAndRex(
         break;
     }
 
-    if (pos < Length && Data[pos] >= RexMin && Data[pos] <= RexMax) {
-        pos += 1;
-    }
-
     return pos;
+}
+
+std::size_t DecodedInstruction::OpcodeOffset() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    return _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
 }
 
 bool DecodedInstruction::IsShaNi() const {
@@ -79,7 +87,7 @@ bool DecodedInstruction::IsShaNi() const {
     if (Data[pos + 1] == ThreeByteEscape38) {
         const std::uint8_t opcode = Data[pos + 2];
         return opcode == 0xC8 || opcode == 0xC9 || opcode == 0xCA ||
-               opcode == 0xCC || opcode == 0xCD;
+               opcode == 0xCB || opcode == 0xCC || opcode == 0xCD;
     }
 
     if (Data[pos + 1] == ThreeByteEscape3A) {
@@ -88,6 +96,49 @@ bool DecodedInstruction::IsShaNi() const {
     }
 
     return false;
+}
+
+bool DecodedInstruction::IsSha256() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (operandSizeOverride || repnePrefix || repPrefix) {
+        return false;
+    }
+
+    if (pos + 2 >= Length) {
+        return false;
+    }
+
+    if (Data[pos] != TwoByteOpcodeEscape || Data[pos + 1] != ThreeByteEscape38) {
+        return false;
+    }
+
+    const std::uint8_t opcode = Data[pos + 2];
+    return opcode == 0xCB || opcode == 0xCC || opcode == 0xCD;
+}
+
+bool DecodedInstruction::IsSha1() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (operandSizeOverride || repnePrefix || repPrefix) {
+        return false;
+    }
+
+    if (pos + 2 >= Length || Data[pos] != TwoByteOpcodeEscape) {
+        return false;
+    }
+
+    const std::uint8_t opcode = Data[pos + 2];
+    if (Data[pos + 1] == ThreeByteEscape38) {
+        return opcode == 0xC8 || opcode == 0xC9 || opcode == 0xCA;
+    }
+    return Data[pos + 1] == ThreeByteEscape3A && opcode == 0xCC;
 }
 
 bool DecodedInstruction::IsExtrq() const {
@@ -209,6 +260,68 @@ bool DecodedInstruction::IsMcommit() const {
     }
 
     return Data[pos] == TwoByteOpcodeEscape && Data[pos + 1] == TwoByteGrp7 && Data[pos + 2] == 0xFA;
+}
+
+bool DecodedInstruction::IsRdseed() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (repnePrefix || repPrefix || pos + 2 >= Length) {
+        return false;
+    }
+
+    const auto modrm = Data[pos + 2];
+    return Data[pos] == TwoByteOpcodeEscape && Data[pos + 1] == TwoByteGrp9 &&
+           ((modrm >> ModRmModShift) & ModRmModMask) == ModRmModRegister && ((modrm >> ModRmRegShift) & ModRmRegMask) == 7;
+}
+
+bool DecodedInstruction::IsRdpid() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (operandSizeOverride || repnePrefix || !repPrefix || pos + 2 >= Length) {
+        return false;
+    }
+
+    const auto modrm = Data[pos + 2];
+    return Data[pos] == TwoByteOpcodeEscape && Data[pos + 1] == TwoByteGrp9 &&
+           ((modrm >> ModRmModShift) & ModRmModMask) == ModRmModRegister && ((modrm >> ModRmRegShift) & ModRmRegMask) == 7;
+}
+
+bool DecodedInstruction::IsRdtscp() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (operandSizeOverride || repnePrefix || repPrefix) {
+        return false;
+    }
+
+    if (pos + 2 >= Length) {
+        return false;
+    }
+
+    return Data[pos] == TwoByteOpcodeEscape && Data[pos + 1] == TwoByteGrp7 && Data[pos + 2] == 0xF9;
+}
+
+bool DecodedInstruction::IsClwb() const {
+    bool operandSizeOverride = false;
+    bool repnePrefix = false;
+    bool repPrefix = false;
+    const std::size_t pos = _skipPrefixesAndRex(&operandSizeOverride, &repnePrefix, &repPrefix);
+
+    if (!operandSizeOverride || repnePrefix || repPrefix || pos + 2 >= Length) {
+        return false;
+    }
+
+    const auto modrm = Data[pos + 2];
+    return Data[pos] == TwoByteOpcodeEscape && Data[pos + 1] == TwoByteGrp15 &&
+           ((modrm >> ModRmModShift) & ModRmModMask) != ModRmModRegister && ((modrm >> ModRmRegShift) & ModRmRegMask) == 6;
 }
 
 bool DecodedInstruction::IsMovntss() const {

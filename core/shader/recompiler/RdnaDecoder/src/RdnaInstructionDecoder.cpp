@@ -5,6 +5,7 @@
 #include "RdnaDecoder/RdnaOpcode.hpp"
 #include "RdnaDecoder/RdnaScalarOpDecoder.hpp"
 #include "RdnaDecoder/RdnaVectorOpDecoder.hpp"
+#include <algorithm>
 #include <bit>
 #include <cstdio>
 #include <stdexcept>
@@ -151,7 +152,7 @@ void DecodeRdnaProgram(std::span<const std::uint32_t> code, RdnaProgram& program
     program.instructions.reserve(code.size());
     program.code = code;
 
-    std::vector<bool> branchTargets;
+    std::uint32_t furthestBranchTarget = 0;
     for (std::uint32_t wordIndex = 0; wordIndex < code.size();) {
         const std::uint32_t programCounter = wordIndex * static_cast<std::uint32_t>(sizeof(std::uint32_t));
         program.instructions.push_back(DecodeRdnaInstruction(programCounter, code, wordIndex));
@@ -159,18 +160,15 @@ void DecodeRdnaProgram(std::span<const std::uint32_t> code, RdnaProgram& program
         const RdnaInstruction& instruction = program.instructions.back();
         wordIndex += instruction.wordCount;
 
-        if (IsDirectBranchOpcode(instruction.op)) {
+        if (IsDirectBranchOpcode(instruction.op) || instruction.op == RdnaOpcode::SCallB64) {
             const std::uint32_t targetIndex = instruction.branchTarget / static_cast<std::uint32_t>(sizeof(std::uint32_t));
-            if (branchTargets.empty()) {
-                branchTargets.resize(code.size());
-            }
-            if (targetIndex >= branchTargets.size()) {
+            if (targetIndex >= code.size()) {
                 throw std::out_of_range("branch target is out of the code span bounds");
             }
-            branchTargets[targetIndex] = true;
+            furthestBranchTarget = std::max(furthestBranchTarget, targetIndex);
         }
 
-        if (instruction.op == RdnaOpcode::SEndpgm && (wordIndex >= code.size() || branchTargets.empty() || !branchTargets[wordIndex])) {
+        if ((instruction.op == RdnaOpcode::SEndpgm || instruction.op == RdnaOpcode::SCodeEnd) && furthestBranchTarget < wordIndex) {
             return;
         }
     }
@@ -219,6 +217,10 @@ RdnaOperand DecodeRdnaScalarSource(std::uint32_t code, std::uint32_t programCoun
         case 125u: operand.kind = RdnaOperandKind::Null; return operand;
         case 126u: operand.kind = RdnaOperandKind::ExecLo; return operand;
         case 127u: operand.kind = RdnaOperandKind::ExecHi; return operand;
+        case 235u: operand.kind = RdnaOperandKind::SrcSharedBase; return operand;
+        case 236u: operand.kind = RdnaOperandKind::SrcSharedLimit; return operand;
+        case 237u: operand.kind = RdnaOperandKind::SrcPrivateBase; return operand;
+        case 238u: operand.kind = RdnaOperandKind::SrcPrivateLimit; return operand;
         case 239u: operand.kind = RdnaOperandKind::PopsExitingWaveId; return operand;
         case 248u:
             operand.kind = RdnaOperandKind::FloatInlineConstant;
@@ -298,6 +300,16 @@ void SetRdnaUnsupported(RdnaInstruction& instruction, RdnaInstructionFamily fami
     throw std::invalid_argument("unsupported RDNA instruction, family=" + std::to_string(static_cast<std::uint32_t>(family)) + " opcode=" + toHexString(opcodeId) + " reason=" + reason + " pc=" + toHexString(instruction.programCounter));
 }
 
+std::uint64_t RdnaApertureSourceValue(const RdnaOperand& operand) {
+    switch (operand.kind) {
+        case RdnaOperandKind::SrcSharedBase: return std::uint64_t{SharedApertureHigh} << 32u;
+        case RdnaOperandKind::SrcSharedLimit: return (std::uint64_t{SharedApertureHigh} << 32u) | 0xffffffffu;
+        case RdnaOperandKind::SrcPrivateBase: return std::uint64_t{PrivateApertureHigh} << 32u;
+        case RdnaOperandKind::SrcPrivateLimit: return (std::uint64_t{PrivateApertureHigh} << 32u) | 0xffffffffu;
+        default: throw std::invalid_argument("RdnaApertureSourceValue: " + RdnaOperandToString(operand) + " is not a scalar aperture source");
+    }
+}
+
 std::string RdnaOperandToString(const RdnaOperand& operand) {
     switch (operand.kind) {
         case RdnaOperandKind::None: return "none";
@@ -317,6 +329,10 @@ std::string RdnaOperandToString(const RdnaOperand& operand) {
         case RdnaOperandKind::ExecZ: return "execz";
         case RdnaOperandKind::M0: return "m0";
         case RdnaOperandKind::PopsExitingWaveId: return "pops_exiting_wave_id";
+        case RdnaOperandKind::SrcSharedBase: return "src_shared_base";
+        case RdnaOperandKind::SrcSharedLimit: return "src_shared_limit";
+        case RdnaOperandKind::SrcPrivateBase: return "src_private_base";
+        case RdnaOperandKind::SrcPrivateLimit: return "src_private_limit";
     }
 
     throw std::invalid_argument("unsupported operand kind for string conversion");

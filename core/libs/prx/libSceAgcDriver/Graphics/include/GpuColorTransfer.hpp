@@ -3,6 +3,7 @@
 
 #include "prx/libSceAgcDriver/Graphics/include/Resources.hpp"
 #include <memory>
+#include <optional>
 
 namespace AgcDriver::Graphics {
 
@@ -12,17 +13,18 @@ public:
     ~GpuColorTransfer();
     GpuColorTransfer(const GpuColorTransfer&) = delete;
     GpuColorTransfer& operator=(const GpuColorTransfer&) = delete;
-    void Upload(std::uint64_t address, std::uint32_t width, std::uint32_t height, ColorTileMode mode);
-    void Detile(VkCommandBuffer commands, bool swapRedBlue = false);
+    void Upload(std::uint64_t address, std::uint32_t width, std::uint32_t height, ColorTileMode mode, std::uint32_t elementBytes = 4);
+    void Detile(VkCommandBuffer commands, bool swapRedBlue = false, bool tenBit = false, bool halfFloat = false, std::optional<float> pqWhiteNits = std::nullopt);
+    void DetileImage(VkCommandBuffer commands, VkImage image, VkImageLayout layout, std::uint32_t width, std::uint32_t height, ColorTileMode mode, bool swapRedBlue, bool tenBit, bool halfFloat = false, std::uint32_t layer = 0);
     void Tile(VkCommandBuffer commands);
     void WriteBack(std::uint64_t address);
-    bool MatchesGuest(std::uint64_t address);
     VkBuffer LinearBuffer() const;
     RenderTarget& Target(const ColorTarget& color, bool blending);
 
 private:
-    void prepare(std::uint32_t width, std::uint32_t height, ColorTileMode mode);
-    void convert(VkCommandBuffer commands, bool toTiled, bool swapRedBlue);
+    void prepare(std::uint32_t width, std::uint32_t height, ColorTileMode mode, std::uint32_t elementBytes);
+    void convert(VkCommandBuffer commands, bool toTiled, bool swapRedBlue, bool tenBit = false, bool halfFloat = false, std::optional<float> pqWhiteNits = std::nullopt);
+    void dispatch(VkCommandBuffer commands, bool toTiled, bool swapRedBlue, bool tenBit, bool tiledSource, bool halfFloat, std::optional<float> pqWhiteNits);
     void release() noexcept;
     Context context;
     VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE;
@@ -30,12 +32,16 @@ private:
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
+    // Guest bytes in host memory, and the device-local copies the conversion shader works on.
     std::unique_ptr<Buffer> tiled;
-    std::unique_ptr<Buffer> linear;
-    std::unique_ptr<Buffer> readback;
+    std::unique_ptr<DeviceBuffer> tiledDevice;
+    std::unique_ptr<DeviceBuffer> linear;
+    std::unique_ptr<Buffer> thresholds;
+    std::unique_ptr<Buffer> pqNits;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     ColorTileMode mode = ColorTileMode::Linear;
+    std::uint32_t elementBytes = 4;
     std::unique_ptr<RenderTarget> target;
     VkExtent2D targetExtent{};
     VkFormat targetFormat = VK_FORMAT_UNDEFINED;

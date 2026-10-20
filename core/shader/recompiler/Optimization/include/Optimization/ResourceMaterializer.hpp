@@ -3,49 +3,86 @@
 
 #include "IntermediateRepresentation/IrProgram.hpp"
 #include "Optimization/SrtWalker.hpp"
+#include "ImageTableAbi.hpp"
+#include <array>
 #include <cstdint>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace ShaderRecompiler {
 
-struct ResourceSpecialization {
-    struct Buffer {
-        std::uint32_t packedStride = 0;
-        IrBufferFormat descriptorFormat = IrBufferFormat::Invalid;
-        std::uint32_t descriptorSwizzle = ShaderImageIdentitySwizzle;
+struct ImageTableElement {
+    std::array<std::uint32_t, 8> words{};
+    RdnaImageDimension dimension = RdnaImageDimension::Unknown;
+    bool depthCompare = false;
+    DescriptorBindingKind kind = DescriptorBindingKind::Buffers;
+    std::uint32_t samplers = 0;
+};
 
-        bool operator==(const Buffer& other) const;
-    };
+struct ImageTableSamplerElement {
+    std::array<std::uint32_t, 4> words{};
+    bool compare = false;
+    bool point = false;
+};
 
-    struct Image {
-        IrTextureNumericClass numericClass = IrTextureNumericClass::Unsupported;
-        RdnaImageDimension dimension = RdnaImageDimension::Unknown;
-        std::uint32_t mipCount = 1;
-        IrBufferFormat conversionFormat = IrBufferFormat::Invalid;
-        std::uint32_t shaderSwizzle = ShaderImageIdentitySwizzle;
-        std::uint32_t indirectRoot = ImageResource::NoIndirectImage;
-        std::uint32_t indirectMappingOffset = 0;
-        std::uint32_t indirectSearchIterations = 0;
-        bool cube = false;
-        bool fmask = false;
+struct ImageTablePoisonRecord {
+    std::array<std::uint32_t, 8> words{};
+    std::uint32_t dwordCount = 0;
+    std::uint32_t resource = 0;
+    ImageTableAbi::PoisonReason reason = ImageTableAbi::PoisonReason::OutsideSnapshot;
+};
 
-        bool operator==(const Image& other) const;
-    };
+struct ResolvedImageTables {
+    std::vector<std::uint32_t> map;
+    std::vector<ImageTableElement> elements;
+    std::vector<ImageTableSamplerElement> samplers;
+    std::vector<ImageTablePoisonRecord> poison;
+    std::uint32_t faults = 0;
+};
 
-    std::vector<Buffer> buffers;
-    std::vector<Image> images;
+struct ImageTableReuseCounts {
+    std::uint64_t unwritten = 0;
+    std::uint64_t compared = 0;
+    std::uint64_t wordsRead = 0;
+    std::uint64_t shared = 0;
+    std::uint64_t columns = 0;
+    std::uint64_t resolutions = 0;
+    std::uint64_t resolutionsShared = 0;
+};
 
-    bool operator==(const ResourceSpecialization& other) const;
+struct RuntimeImageModeMatch {
+    std::optional<std::uint32_t> mode;
+    ImageTableAbi::PoisonReason reason = ImageTableAbi::PoisonReason::InvalidFormat;
+    std::string detail;
+};
 
-    std::vector<std::uint32_t> boundDescriptors;
+class ConvertedSampleRequired : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 class ResourceMaterializer {
 public:
-    void Apply(IrProgram& program, const ResourceSpecialization& specialization) const;
+    static std::uint32_t EmulatedCompareState(const ShaderInfo& info, const ResourceSnapshot& snapshot, std::uint32_t index);
+    void ApplyStaticInterface(IrProgram& program, bool nativeSampleOffsets = true) const;
+    static std::vector<ImageResource> RuntimeImageModes(const ImageResource& image);
+    static RuntimeImageModeMatch TryRuntimeImageMode(const ImageResource& image, const DescriptorValue& descriptor, std::span<const ImageResource> modes);
+    static std::uint32_t RuntimeImageMode(const ImageResource& image, const DescriptorValue& descriptor, std::span<const ImageResource> modes);
+    static void PrepareImageModes(ShaderInfo& info);
+    static const char* UnnormalizedSampleMismatch(const ImageResource& image);
+    static std::shared_ptr<const ResolvedImageTables> ResolveImageTablesShared(const ShaderInfo& info, const ResourceSnapshot& snapshot, std::uint64_t memoKey);
+    static bool NullImageDescriptor(const ImageResource& image, const DescriptorValue& descriptor);
+    static ResolvedImageTables ResolveImageTables(const ShaderInfo& info, const ResourceSnapshot& snapshot, std::uint64_t memoKey = 0);
     [[nodiscard]] IrResourcePlan ExtractPlan(const IrProgram& program) const;
-    void Materialize(const IrResourcePlan& program, const SrtRuntime& runtime, ResourceSnapshot& snapshot, ResourceSpecialization& specialization) const;
-
+    static void CompactPlan(IrResourcePlan& plan);
+    void Materialize(const IrResourcePlan& program, const SrtRuntime& runtime, ResourceSnapshot& snapshot) const;
+    static std::uint64_t SpecializationNanoseconds();
+    static ImageTableReuseCounts TableReuse();
+    static std::uint64_t EvaluateNanoseconds();
+    static std::uint64_t MaterializeNanoseconds();
 };
 
 }

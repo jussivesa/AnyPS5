@@ -19,6 +19,7 @@ enum class BranchCondition {
     ExecZero,
     ExecNonZero,
     ScalarInstruction,
+    IndirectTarget,
     GotoVariable,
     Unknown
 };
@@ -66,6 +67,7 @@ struct BasicBlock {
     std::uint32_t endProgramCounter = 0;
     std::uint32_t instructionBegin = 0;
     std::uint32_t instructionEnd = 0;
+    std::uint32_t estimatedSpirvWords = 0;
     std::vector<std::uint32_t> predecessors;
     std::vector<std::uint32_t> successors;
     std::vector<std::uint32_t> dominators;
@@ -95,12 +97,20 @@ struct StronglyConnectedComponent {
 };
 
 struct ControlFlowGraph {
+    struct CodeTableLoad {
+        std::uint32_t programCounter = 0;
+        std::vector<std::uint64_t> values;
+    };
     std::vector<BasicBlock> blocks;
     std::vector<NaturalLoop> naturalLoops;
     std::vector<BackEdge> backEdges;
     std::vector<StronglyConnectedComponent> components;
     std::vector<std::uint32_t> codeTableLoadProgramCounters;
+    std::vector<CodeTableLoad> codeTableLoads;
+    std::vector<std::uint32_t> unlinkedCallProgramCounters;
     std::uint32_t entryBlock = InvalidControlFlowId;
+    bool hasFetchCall = false;
+    std::uint32_t fetchCallProgramCounter = 0;
     bool irreducible = false;
     bool unsupported = false;
     FailureKind failureKind = FailureKind::None;

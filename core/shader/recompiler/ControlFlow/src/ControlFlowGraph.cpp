@@ -1,4 +1,5 @@
 #include "ControlFlow/ControlFlowGraph.hpp"
+#include "ControlFlow/ControlFlowHelpers.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <iterator>
@@ -6,8 +7,6 @@
 #include <string>
 
 namespace ShaderRecompiler {
-
-namespace {
 
 std::string toHexString(std::uint32_t value) {
     char buffer[11];
@@ -24,6 +23,45 @@ std::vector<std::uint32_t> intersectSorted(const std::vector<std::uint32_t>& fir
     std::set_intersection(first.begin(), first.end(), second.begin(), second.end(), std::back_inserter(result));
     return result;
 }
+
+void addUnique(std::vector<std::uint32_t>& values, std::uint32_t value) {
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+void sortUnique(std::vector<std::uint32_t>& values) {
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+}
+
+std::uint32_t remapId(std::uint32_t id, const std::vector<std::uint32_t>& idMap) {
+    return id != InvalidControlFlowId && id < idMap.size() ? idMap[id] : id;
+}
+
+void remapIds(std::vector<std::uint32_t>& values, const std::vector<std::uint32_t>& idMap) {
+    for (auto& value : values) {
+        value = remapId(value, idMap);
+    }
+    sortUnique(values);
+}
+
+void rebuildPredecessors(ControlFlowGraph& graph) {
+    for (auto& block : graph.blocks) {
+        block.predecessors.clear();
+        sortUnique(block.successors);
+    }
+    for (const auto& block : graph.blocks) {
+        for (const auto successor : block.successors) {
+            addUnique(graph.blocks[successor].predecessors, block.id);
+        }
+    }
+    for (auto& block : graph.blocks) {
+        sortUnique(block.predecessors);
+    }
+}
+
+namespace {
 
 std::string joinIds(const std::vector<std::uint32_t>& values) {
     std::string text;
@@ -68,11 +106,13 @@ BasicBlock& ControlFlowGraph::FindBlockByProgramCounter(std::uint32_t programCou
 }
 
 bool ControlFlowGraph::Dominates(std::uint32_t dominator, std::uint32_t blockId) const {
-    return contains(FindBlock(blockId).dominators, dominator);
+    const auto& dominators = FindBlock(blockId).dominators;
+    return std::binary_search(dominators.begin(), dominators.end(), dominator);
 }
 
 bool ControlFlowGraph::PostDominates(std::uint32_t postDominator, std::uint32_t blockId) const {
-    return contains(FindBlock(blockId).postDominators, postDominator);
+    const auto& postDominators = FindBlock(blockId).postDominators;
+    return std::binary_search(postDominators.begin(), postDominators.end(), postDominator);
 }
 
 std::uint32_t ControlFlowGraph::FindNearestCommonPostDominator(std::uint32_t firstBlock, std::uint32_t secondBlock) const {
@@ -107,6 +147,7 @@ std::string BranchConditionToString(BranchCondition condition) {
         case BranchCondition::ExecZero: return "execz";
         case BranchCondition::ExecNonZero: return "execnz";
         case BranchCondition::ScalarInstruction: return "scalar_instruction";
+        case BranchCondition::IndirectTarget: return "indirect_target";
         case BranchCondition::GotoVariable: return "goto_variable";
         case BranchCondition::Unknown: return "unknown";
     }
@@ -143,7 +184,8 @@ std::string GraphToString(const ControlFlowGraph& graph) {
         text += "block_" + std::to_string(block.id);
         text += " pc=" + toHexString(block.startProgramCounter);
         text += " end=" + toHexString(block.endProgramCounter);
-        text += " inst=[" + std::to_string(block.instructionBegin) + "," + std::to_string(block.instructionEnd) + ")\n";
+        text += " inst=[" + std::to_string(block.instructionBegin) + "," + std::to_string(block.instructionEnd) + ")";
+        text += " words=" + std::to_string(block.estimatedSpirvWords) + "\n";
         text += "  predecessors=[" + joinIds(block.predecessors) + "]";
         text += " successors=[" + joinIds(block.successors) + "]\n";
         text += "  dominators=[" + joinIds(block.dominators) + "]";

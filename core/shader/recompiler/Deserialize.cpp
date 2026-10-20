@@ -7,6 +7,7 @@
 #include "Optimization/BindingAllocator.hpp"
 #include "Optimization/ConstantFolder.hpp"
 #include "Optimization/DeadCodeEliminator.hpp"
+#include "Optimization/MaskedSelectEliminator.hpp"
 #include "Optimization/ReadLaneEliminator.hpp"
 #include "Optimization/ResourceTracker.hpp"
 #include "Optimization/ShaderInfoCollector.hpp"
@@ -152,7 +153,7 @@ int main(int argc, char** argv) {
         std::cout << "Disassembly written to disasm.txt (" << disasm.size() << " bytes)\n";
 
         const ShaderStageKind stageKind = ToShaderStageKind(request.shader.stage);
-        const auto inputInfo = BuildShaderStageInputInfo(stageKind, request.context);
+        const auto inputInfo = BuildShaderStageInputInfo(stageKind, request.context, request.target.subgroupSize, request.graphics && request.graphics->mesh ? &*request.graphics->mesh : nullptr);
 
         GraphBuilder graphBuilder;
         auto cfg = graphBuilder.Build(decoded);
@@ -165,18 +166,9 @@ int main(int argc, char** argv) {
         translateOptions.waveSize = request.context.waveSize;
         translateOptions.userDataBaseRegister = request.context.userDataBaseRegister;
         translateOptions.userDataCount = static_cast<std::uint32_t>(request.context.userData.size());
+        translateOptions.scratchDwords = request.context.compute.has_value() ? request.context.compute->scratchDwords : 0u;
+        translateOptions.sharedMemoryBytes = request.context.compute.has_value() && static_cast<std::uint64_t>(request.context.compute->ldsSizeDwords) * 4u + 4u > request.target.maxWorkgroupSharedMemoryBytes ? request.context.compute->ldsSizeDwords * 4u : 0u;
         translateOptions.inputInfo = inputInfo;
-
-        EmbeddedFetchPlan embeddedFetch;
-
-        if ((stageKind == ShaderStageKind::Vertex || stageKind == ShaderStageKind::Local) && inputInfo.vertex != nullptr && inputInfo.vertex->fetchEmbedded) {
-            EmbeddedVertexFetchAnalyzer embeddedFetchAnalyzer;
-            embeddedFetch = embeddedFetchAnalyzer.Analyze(decoded, inputInfo.vertex->fetchAttribReg, inputInfo.vertex->fetchBufferReg, request.context.userDataBaseRegister, static_cast<std::uint32_t>(request.context.userData.size()), request.context.waveSize);
-        }
-
-        translateOptions.embeddedFetch = embeddedFetch.loads.empty() ? nullptr : &embeddedFetch;
-
-        std::cout << "embedded fetch loads: " << embeddedFetch.loads.size() << "\n";
 
         InstructionTranslator translator;
         auto program = translator.Translate(decoded, cfg, translateOptions);
@@ -208,6 +200,13 @@ int main(int argc, char** argv) {
             deadCodeEliminator.Eliminate(program);
         }
 
+        MaskedSelectEliminator maskedSelectEliminator;
+        const auto maskedSelectStats = maskedSelectEliminator.Eliminate(program);
+        std::cout << "MaskedSelectEliminator removed " << maskedSelectStats.removedSelects << "\n";
+        if (maskedSelectStats.removedSelects != 0u) {
+            deadCodeEliminator.Eliminate(program);
+        }
+
         SrtWalker srtWalker;
         srtWalker.BuildPlan(program);
         std::cout << "SrtWalker::BuildPlan OK\n";
@@ -227,7 +226,7 @@ int main(int argc, char** argv) {
         std::cout << "ShaderInfoCollector::Collect OK\n";
 
         BindingAllocator bindingAllocator;
-        const auto bindings = bindingAllocator.Allocate(program, request.layout);
+        const auto bindings = bindingAllocator.Allocate(program, request.layout, request.target.registrationModules);
 
         std::cout << "BindingAllocator::Allocate OK, bindings=" << bindings.bindings.size() << "\n";
         std::cout << "ALL STAGES OK\n";

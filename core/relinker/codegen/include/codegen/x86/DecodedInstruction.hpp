@@ -10,7 +10,10 @@ struct DecodedInstruction {
     const std::uint8_t* Data;
     std::size_t Length;
 
+    [[nodiscard]] std::size_t OpcodeOffset() const;
     [[nodiscard]] bool IsShaNi() const;
+    [[nodiscard]] bool IsSha256() const;
+    [[nodiscard]] bool IsSha1() const;
     [[nodiscard]] bool IsExtrq() const;
     [[nodiscard]] bool IsInsertq() const;
     [[nodiscard]] bool IsMonitorx() const;
@@ -20,6 +23,10 @@ struct DecodedInstruction {
     [[nodiscard]] bool IsMcommit() const;
     [[nodiscard]] bool IsMovntss() const;
     [[nodiscard]] bool IsMovntsd() const;
+    [[nodiscard]] bool IsRdseed() const;
+    [[nodiscard]] bool IsRdpid() const;
+    [[nodiscard]] bool IsRdtscp() const;
+    [[nodiscard]] bool IsClwb() const;
 
 private:
     [[nodiscard]] std::size_t _skipPrefixesAndRex(bool* outHasOperandSizePrefix, bool* outHasRepnePrefix, bool* outHasRepPrefix) const;

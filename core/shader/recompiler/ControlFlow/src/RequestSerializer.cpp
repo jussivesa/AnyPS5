@@ -153,6 +153,8 @@ public:
 
     bool ReadBool() { return ReadU8() != 0u; }
 
+    std::uint64_t Remaining() const { return m_data.size() - m_offset; }
+
     std::uint32_t ReadU32() {
         std::uint32_t value = 0u;
         for (std::uint32_t i = 0; i < 4u; i++) {
@@ -227,6 +229,38 @@ ProgramRole readProgramRole(Reader& reader) {
     return static_cast<ProgramRole>(value);
 }
 
+ConservativeZExport readConservativeZExport(Reader& reader) {
+    const auto value = reader.ReadU8();
+    if (value > static_cast<std::uint8_t>(ConservativeZExport::GreaterThanZ)) {
+        throw std::runtime_error("RequestSerializer: invalid ConservativeZExport value");
+    }
+    return static_cast<ConservativeZExport>(value);
+}
+
+ColorExportPacking readColorExportPacking(Reader& reader) {
+    const auto value = reader.ReadU8();
+    if (value > static_cast<std::uint8_t>(ColorExportPacking::Float11_11_10)) {
+        throw std::runtime_error("RequestSerializer: invalid ColorExportPacking value");
+    }
+    return static_cast<ColorExportPacking>(value);
+}
+
+RasterPrimitive readRasterPrimitive(Reader& reader) {
+    const auto value = reader.ReadU8();
+    if (value > static_cast<std::uint8_t>(RasterPrimitive::Rectangle)) {
+        throw std::runtime_error("RequestSerializer: invalid RasterPrimitive value");
+    }
+    return static_cast<RasterPrimitive>(value);
+}
+
+PixelPositionLocation readPixelPositionLocation(Reader& reader) {
+    const auto value = reader.ReadU8();
+    if (value > static_cast<std::uint8_t>(PixelPositionLocation::UpperLeft)) {
+        throw std::runtime_error("RequestSerializer: invalid PixelPositionLocation value");
+    }
+    return static_cast<PixelPositionLocation>(value);
+}
+
 void writeShaderBinary(Writer& writer, const ShaderBinary& binary) {
     writer.WriteU8(static_cast<std::uint8_t>(binary.stage));
     writer.WriteU64(binary.codeAddress);
@@ -279,8 +313,9 @@ void writePixelInfo(Writer& writer, const ShaderPixelStageInfo& info) {
         writer.WriteU32(value);
     }
     writer.WriteBool(info.wave32);
-    writer.WriteU32(info.perspectiveCenterVgpr);
+    writer.WriteU32(info.inputAddr);
     writer.WriteBool(info.hasPerspectiveCenterVgpr);
+    writer.WriteBool(info.perspectiveCentroid);
     writer.WriteBool(info.posX);
     writer.WriteBool(info.posY);
     writer.WriteBool(info.posZ);
@@ -289,25 +324,52 @@ void writePixelInfo(Writer& writer, const ShaderPixelStageInfo& info) {
     writer.WriteBool(info.ancillary);
     writer.WriteBool(info.sampleShading);
     writer.WriteBool(info.noPerspective);
+    writer.WriteBool(info.linearCentroid);
     writer.WriteBool(info.pixelKillEnable);
     writer.WriteBool(info.depthExportEnable);
     writer.WriteBool(info.sampleMaskExportEnable);
     writer.WriteBool(info.earlyZ);
     writer.WriteBool(info.executeOnNoop);
+    writer.WriteU8(static_cast<std::uint8_t>(info.conservativeZExport));
+    writer.WriteBool(info.orderedPixelShader);
     for (const std::uint8_t value : info.targetOutputMode) {
         writer.WriteU8(value);
     }
+    for (const std::uint8_t value : info.targetExportMapping) {
+        writer.WriteU8(value);
+    }
+    for (const ColorExportPacking value : info.targetExportPacking) {
+        writer.WriteU8(static_cast<std::uint8_t>(value));
+    }
+    writer.WriteBool(info.dualSourceBlend);
+    writer.WriteBool(info.alphaToCoverage);
+    writer.WriteBool(info.stencilRefExportEnable);
+    writer.WriteU8(static_cast<std::uint8_t>(info.rasterPrimitive));
+    writer.WriteBool(info.layerExported);
+    writer.WriteBool(info.ditheredAlphaToCoverage);
+    writer.WriteBool(info.frontFaceAllBits);
+    writer.WriteU8(info.quadPixelMask);
+    for (const std::uint16_t mask : info.quadSampleMask) writer.WriteU32(mask);
+    writer.WriteU32(info.reversedBlend);
+    writer.WriteBool(info.iteratesSamples);
+    writer.WriteU8(static_cast<std::uint8_t>(info.positionLocation));
+    for (const std::uint8_t location : info.sampleLocations) writer.WriteU8(location);
+    writer.WriteBool(info.stencilOperationValueExport);
 }
 
-ShaderPixelStageInfo readPixelInfo(Reader& reader) {
+ShaderPixelStageInfo readPixelInfo(Reader& reader, std::uint32_t version) {
     ShaderPixelStageInfo info{};
     info.interpolatorCount = reader.ReadU32();
     for (std::uint32_t& value : info.interpolatorSettings) {
         value = reader.ReadU32();
     }
     info.wave32 = reader.ReadBool();
-    info.perspectiveCenterVgpr = reader.ReadU32();
+    const auto inputAddrOrCenterVgpr = reader.ReadU32();
     info.hasPerspectiveCenterVgpr = reader.ReadBool();
+    if (version >= 5u) {
+        info.inputAddr = inputAddrOrCenterVgpr;
+        info.perspectiveCentroid = reader.ReadBool();
+    }
     info.posX = reader.ReadBool();
     info.posY = reader.ReadBool();
     info.posZ = reader.ReadBool();
@@ -316,13 +378,58 @@ ShaderPixelStageInfo readPixelInfo(Reader& reader) {
     info.ancillary = reader.ReadBool();
     info.sampleShading = reader.ReadBool();
     info.noPerspective = reader.ReadBool();
+    if (version >= 5u) info.linearCentroid = reader.ReadBool();
     info.pixelKillEnable = reader.ReadBool();
     info.depthExportEnable = reader.ReadBool();
     info.sampleMaskExportEnable = reader.ReadBool();
     info.earlyZ = reader.ReadBool();
     info.executeOnNoop = reader.ReadBool();
+    if (version >= 7u) info.conservativeZExport = readConservativeZExport(reader);
+    if (version >= 11u) info.orderedPixelShader = reader.ReadBool();
     for (std::uint8_t& value : info.targetOutputMode) {
         value = reader.ReadU8();
+    }
+    if (version >= 8u) {
+        for (std::uint8_t& value : info.targetExportMapping) {
+            value = reader.ReadU8();
+        }
+    } else {
+        info.targetExportMapping.fill(0u);
+    }
+    if (version >= 14u) {
+        for (ColorExportPacking& value : info.targetExportPacking) {
+            value = readColorExportPacking(reader);
+        }
+    }
+    if (version >= 15u) info.dualSourceBlend = reader.ReadBool();
+    if (version >= 16u) info.alphaToCoverage = reader.ReadBool();
+    if (version >= 17u) info.stencilRefExportEnable = reader.ReadBool();
+    if (version >= 19u) info.rasterPrimitive = readRasterPrimitive(reader);
+    if (version >= 23u) info.layerExported = reader.ReadBool();
+    if (version >= 25u) info.ditheredAlphaToCoverage = reader.ReadBool();
+    if (version >= 27u) info.frontFaceAllBits = reader.ReadBool();
+    if (version >= 28u) info.quadPixelMask = reader.ReadU8();
+    if (version >= 29u) {
+        for (std::uint16_t& mask : info.quadSampleMask) {
+            const auto value = reader.ReadU32();
+            if (value > 0xffffu) throw std::runtime_error("invalid recompile request quad sample mask");
+            mask = static_cast<std::uint16_t>(value);
+        }
+    }
+    if (version >= 30u) info.reversedBlend = reader.ReadU32();
+    if (version >= 34u) {
+        info.iteratesSamples = reader.ReadBool();
+        info.positionLocation = readPixelPositionLocation(reader);
+        for (std::uint8_t& location : info.sampleLocations) location = reader.ReadU8();
+    }
+    if (version >= 37u) info.stencilOperationValueExport = reader.ReadBool();
+    if (version < 5u) {
+        const auto input = [](PixelInput value, bool present) { return present ? PixelInputBit(value) : 0u; };
+        info.inputAddr = input(PixelInput::PerspectiveSample, info.hasPerspectiveCenterVgpr && inputAddrOrCenterVgpr == 2u) | input(PixelInput::PerspectiveCenter, info.hasPerspectiveCenterVgpr) |
+            input(PixelInput::LinearSample, info.sampleShading) | input(PixelInput::LinearCenter, info.noPerspective) |
+            input(PixelInput::PositionX, info.posX) | input(PixelInput::PositionY, info.posY) | input(PixelInput::PositionZ, info.posZ) | input(PixelInput::PositionW, info.posW) |
+            input(PixelInput::FrontFace, info.frontFace) | input(PixelInput::Ancillary, info.ancillary);
+        if (info.sampleShading) info.inputAddr |= PixelInputBit(PixelInput::PerspectiveSample);
     }
     return info;
 }
@@ -343,9 +450,10 @@ void writeVertexInfo(Writer& writer, const ShaderVertexStageInfo& info) {
     writer.WriteU32(info.fetchAttribReg);
     writer.WriteU32(info.fetchBufferReg);
     writer.WriteBool(info.fetchEmbedded);
+    writer.WriteU32(info.paClVsOutCntl);
 }
 
-ShaderVertexStageInfo readVertexInfo(Reader& reader) {
+ShaderVertexStageInfo readVertexInfo(Reader& reader, std::uint32_t version) {
     ShaderVertexStageInfo info{};
     for (auto& resource : info.resources) {
         for (std::uint32_t& value : resource.fields) {
@@ -362,6 +470,7 @@ ShaderVertexStageInfo readVertexInfo(Reader& reader) {
     info.fetchAttribReg = reader.ReadU32();
     info.fetchBufferReg = reader.ReadU32();
     info.fetchEmbedded = reader.ReadBool();
+    if (version >= 20u) info.paClVsOutCntl = reader.ReadU32();
     return info;
 }
 
@@ -426,9 +535,11 @@ void writeMeshConfiguration(Writer& writer, const MeshConfiguration& configurati
     writer.WriteU32(configuration.threadsPerGroup);
     writer.WriteU32(configuration.ldsSizeDwords);
     writer.WriteU32(configuration.provokingVertex);
+    writer.WriteU32(configuration.esgsItemSize);
+    writer.WriteU32(configuration.outputPrimitiveSize);
 }
 
-MeshConfiguration readMeshConfiguration(Reader& reader) {
+MeshConfiguration readMeshConfiguration(Reader& reader, std::uint32_t version) {
     MeshConfiguration configuration{};
     configuration.inputPrimitive = reader.ReadU32();
     configuration.primitivesPerGroup = reader.ReadU32();
@@ -438,6 +549,8 @@ MeshConfiguration readMeshConfiguration(Reader& reader) {
     configuration.threadsPerGroup = reader.ReadU32();
     configuration.ldsSizeDwords = reader.ReadU32();
     configuration.provokingVertex = reader.ReadU32();
+    configuration.esgsItemSize = version >= 4u ? reader.ReadU32() : 4u;
+    if (version >= 31u) configuration.outputPrimitiveSize = reader.ReadU32();
     return configuration;
 }
 
@@ -447,15 +560,23 @@ void writeTessellationConfiguration(Writer& writer, const TessellationConfigurat
     writer.WriteU32(configuration.domain);
     writer.WriteU32(configuration.partitioning);
     writer.WriteU32(configuration.outputTopology);
+    writer.WriteU32(configuration.patchesPerGroup);
+    writer.WriteU32(configuration.primitiveGroupSize);
+    writer.WriteBool(configuration.breakAtInstance);
 }
 
-TessellationConfiguration readTessellationConfiguration(Reader& reader) {
+TessellationConfiguration readTessellationConfiguration(Reader& reader, std::uint32_t version) {
     TessellationConfiguration configuration{};
     configuration.inputControlPoints = reader.ReadU32();
     configuration.outputControlPoints = reader.ReadU32();
     configuration.domain = reader.ReadU32();
     configuration.partitioning = reader.ReadU32();
     configuration.outputTopology = reader.ReadU32();
+    if (version >= 22u) configuration.patchesPerGroup = reader.ReadU32();
+    if (version >= 24u) {
+        configuration.primitiveGroupSize = reader.ReadU32();
+        configuration.breakAtInstance = reader.ReadBool();
+    }
     return configuration;
 }
 
@@ -480,9 +601,16 @@ void writeGuestContext(Writer& writer, const GuestContext& context) {
         writer.WriteU64(region.guestAddress);
         writer.WriteBytes(region.bytes);
     }
+    writer.WriteBool(context.floatMode.has_value());
+    if (context.floatMode.has_value()) {
+        writer.WriteU32(context.floatMode->floatMode);
+        writer.WriteBool(context.floatMode->dx10Clamp);
+        writer.WriteBool(context.floatMode->ieeeMode);
+        writer.WriteBool(context.floatMode->fp16Overflow);
+    }
 }
 
-GuestContext readGuestContext(Reader& reader, DeserializedRequest& result) {
+GuestContext readGuestContext(Reader& reader, DeserializedRequest& result, std::uint32_t version) {
     GuestContext context{};
     context.waveSize = reader.ReadU32();
     context.userDataBaseRegister = reader.ReadU32();
@@ -493,11 +621,11 @@ GuestContext readGuestContext(Reader& reader, DeserializedRequest& result) {
         context.compute = result.compute;
     }
     if (reader.ReadBool()) {
-        result.pixel = readPixelInfo(reader);
+        result.pixel = readPixelInfo(reader, version);
         context.pixel = result.pixel;
     }
     if (reader.ReadBool()) {
-        result.vertex = readVertexInfo(reader);
+        result.vertex = readVertexInfo(reader, version);
         context.vertex = result.vertex;
     }
     const auto regionCount = reader.ReadU64();
@@ -512,6 +640,14 @@ GuestContext readGuestContext(Reader& reader, DeserializedRequest& result) {
         result.memory.push_back(region);
     }
     context.memory = result.memory;
+    if (version >= 13u && reader.ReadBool()) {
+        ShaderFloatMode mode;
+        mode.floatMode = reader.ReadU32();
+        mode.dx10Clamp = reader.ReadBool();
+        mode.ieeeMode = reader.ReadBool();
+        mode.fp16Overflow = reader.ReadBool();
+        context.floatMode = mode;
+    }
     return context;
 }
 
@@ -613,9 +749,22 @@ void writeGraphicsCompileContext(Writer& writer, const GraphicsCompileContext& g
     writer.WriteU32(graphics.draw.indexCount);
     writer.WriteU32(graphics.draw.indexElementBytes);
     writer.WriteU32(graphics.draw.instanceCount);
+    writer.WriteBool(graphics.meshBarycentrics.has_value());
+    if (graphics.meshBarycentrics.has_value()) {
+        const auto& barycentrics = *graphics.meshBarycentrics;
+        writer.WriteBool(barycentrics.emulation.active);
+        writer.WriteBool(barycentrics.emulation.smooth);
+        writer.WriteBool(barycentrics.emulation.linear);
+        writer.WriteU64(barycentrics.parameters.size());
+        for (const auto& parameter : barycentrics.parameters) {
+            writer.WriteU32(parameter.location);
+            writer.WriteU32(parameter.sourceLocation);
+            writer.WriteBool(parameter.perVertex);
+        }
+    }
 }
 
-GraphicsCompileContext readGraphicsCompileContext(Reader& reader, DeserializedGraphicsCompileContext& storage) {
+GraphicsCompileContext readGraphicsCompileContext(Reader& reader, DeserializedGraphicsCompileContext& storage, std::uint32_t version) {
     GraphicsCompileContext graphics{};
     graphics.firstUserSgpr = reader.ReadU32();
     const auto programCount = reader.ReadU64();
@@ -639,11 +788,11 @@ GraphicsCompileContext readGraphicsCompileContext(Reader& reader, DeserializedGr
     }
     graphics.linkedPrograms = storage.linkedPrograms;
     if (reader.ReadBool()) {
-        storage.mesh = readMeshConfiguration(reader);
+        storage.mesh = readMeshConfiguration(reader, version);
         graphics.mesh = storage.mesh;
     }
     if (reader.ReadBool()) {
-        storage.tessellation = readTessellationConfiguration(reader);
+        storage.tessellation = readTessellationConfiguration(reader, version);
         graphics.tessellation = storage.tessellation;
     }
     storage.draw.indexAddress = reader.ReadU64();
@@ -651,6 +800,22 @@ GraphicsCompileContext readGraphicsCompileContext(Reader& reader, DeserializedGr
     storage.draw.indexElementBytes = reader.ReadU32();
     storage.draw.instanceCount = reader.ReadU32();
     graphics.draw = storage.draw;
+    if (version >= 38u && reader.ReadBool()) {
+        MeshBarycentricLayout barycentrics;
+        barycentrics.emulation.active = reader.ReadBool();
+        barycentrics.emulation.smooth = reader.ReadBool();
+        barycentrics.emulation.linear = reader.ReadBool();
+        const auto count = reader.ReadU64();
+        reader.Require(count, 9u);
+        for (std::uint64_t i = 0; i < count; i++) {
+            FragmentParameter parameter{};
+            parameter.location = reader.ReadU32();
+            parameter.sourceLocation = reader.ReadU32();
+            parameter.perVertex = reader.ReadBool();
+            barycentrics.parameters.push_back(parameter);
+        }
+        graphics.meshBarycentrics = std::move(barycentrics);
+    }
     return graphics;
 }
 
@@ -660,7 +825,7 @@ std::string RequestSerializer::Serialize(const RecompileRequest& request) const 
     std::string buffer;
     Writer writer(buffer);
     writer.WriteU32(0x41505335u);
-    writer.WriteU32(2u);
+    writer.WriteU32(38u);
     writeShaderBinary(writer, request.shader);
     writeGuestContext(writer, request.context);
     writeSpirvTarget(writer, request.target);
@@ -670,6 +835,27 @@ std::string RequestSerializer::Serialize(const RecompileRequest& request) const 
         writeGraphicsCompileContext(writer, *request.graphics);
     }
     writer.WriteBool(request.useCache);
+    if (request.context.compute.has_value()) {
+        for (const std::uint32_t value : request.context.compute->partialThreads) {
+            writer.WriteU32(value);
+        }
+    }
+    writer.WriteBool(request.target.nonConstantImageOffsets);
+    writer.WriteU32(request.target.srgbDecodeFormats);
+    if (request.context.compute.has_value()) writer.WriteU32(request.context.compute->scratchDwords);
+    writer.WriteBool(request.target.narrowSubgroupClock);
+    writer.WriteBool(request.target.float64DenormPreserve);
+    writer.WriteBool(request.target.registrationModules);
+    writer.WriteU32(request.target.registrationWordLimit);
+    writer.WriteBool(request.target.vertexSubgroups);
+    writer.WriteBool(request.target.float16DenormPreserve);
+    writer.WriteU32Span(request.context.linkedCallFallbacks);
+    writer.WriteBool(request.target.spannedWaves);
+    writer.WriteBool(request.target.depthRangeRemap);
+    if (request.context.vertex.has_value()) {
+        writer.WriteU32(request.context.vertex->depthRemapMode);
+    }
+    writer.WriteBool(request.target.float32FlushToZero);
     return base64Encode(buffer);
 }
 
@@ -678,17 +864,52 @@ DeserializedRequest RequestSerializer::Deserialize(std::string_view text) const 
     Reader reader(decoded);
     if (reader.ReadU32() != 0x41505335u) throw std::runtime_error("invalid recompile request signature");
     const auto version = reader.ReadU32();
-    if (version != 1u && version != 2u) throw std::runtime_error("unsupported recompile request serialization version");
+    if (version < 1u || version > 38u) throw std::runtime_error("unsupported recompile request serialization version");
     DeserializedRequest result{};
     result.request.shader = readShaderBinary(reader, result.shaderCode, result.shaderHeader);
-    result.request.context = readGuestContext(reader, result);
+    result.request.context = readGuestContext(reader, result, version);
     result.request.target = readSpirvTarget(reader, result);
     result.request.layout = readBindingLayout(reader);
     if (reader.ReadBool()) {
         result.graphicsStorage = std::make_unique<DeserializedGraphicsCompileContext>();
-        result.request.graphics = readGraphicsCompileContext(reader, *result.graphicsStorage);
+        result.request.graphics = readGraphicsCompileContext(reader, *result.graphicsStorage, version);
     }
-    if (version == 2u) result.request.useCache = reader.ReadBool();
+    if (version >= 2u) result.request.useCache = reader.ReadBool();
+    if (version >= 3u && result.request.context.compute.has_value()) {
+        for (std::uint32_t& value : result.request.context.compute->partialThreads) {
+            value = reader.ReadU32();
+        }
+    }
+    if (version >= 6u) result.request.target.nonConstantImageOffsets = reader.ReadBool();
+    if (version >= 9u) result.request.target.srgbDecodeFormats = reader.ReadU32();
+    if (version >= 10u && result.request.context.compute.has_value()) result.request.context.compute->scratchDwords = reader.ReadU32();
+    if (version >= 12u) result.request.target.narrowSubgroupClock = reader.ReadBool();
+    if (version >= 16u) result.request.target.float64DenormPreserve = reader.ReadBool();
+    if (version >= 17u) result.request.target.registrationModules = reader.ReadBool();
+    if (version >= 17u) result.request.target.registrationWordLimit = reader.ReadU32();
+    if (version >= 18u) result.request.target.vertexSubgroups = reader.ReadBool();
+    if (version >= 21u) {
+        if (version >= 22u) reader.Require(1u);
+        if (reader.Remaining() != 0u) {
+            const auto float16DenormPreserve = reader.ReadU8();
+            if (float16DenormPreserve > 1u) throw std::runtime_error("RequestSerializer: invalid float16DenormPreserve value");
+            result.request.target.float16DenormPreserve = float16DenormPreserve != 0u;
+        }
+    }
+    if (version >= 26u) {
+        result.linkedCallFallbacks = reader.ReadU32Vector();
+        result.request.context.linkedCallFallbacks = result.linkedCallFallbacks;
+    }
+    if (version >= 32u) result.request.target.spannedWaves = reader.ReadBool();
+    if (version >= 35u) {
+        result.request.target.depthRangeRemap = reader.ReadBool();
+        if (result.vertex.has_value()) {
+            result.vertex->depthRemapMode = reader.ReadU32();
+            result.request.context.vertex = result.vertex;
+        }
+    }
+    if (version >= 36u) result.request.target.float32FlushToZero = reader.ReadBool();
+    if (version >= 21u && reader.Remaining() != 0u) throw std::runtime_error("RequestSerializer: unexpected trailing data");
     return result;
 }
 
